@@ -1,37 +1,38 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { getSql } from "@/lib/db"
+// app/api/orders/route.ts
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
-  const sql = getSql()
-  try {
-    const rows =
-      await sql`select id, customer_name, phone, address, lat, lng, instructions, items, total, created_at from orders order by created_at desc`
-    return NextResponse.json(rows)
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
-  }
-}
-
-export async function POST(req: NextRequest) {
-  let body: any
-  try {
-    body = await req.json()
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
+export async function GET(req: NextRequest) {
+  // 1️⃣ Check admin cookie
+  const adminCookie = req.cookies.get(process.env.ADMIN_SESSION_KEY || "admin_session");
+  if (!adminCookie?.value || adminCookie.value !== "authenticated") {
+    return NextResponse.json({ error: "Unauthorized (admin)" }, { status: 401 });
   }
 
-  const { customer_name, phone, address, lat, lng, instructions, items, total } = body
-  if (!customer_name || !phone || !address || lat == null || lng == null || !items) {
-    return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+  // 2️⃣ Get ExpressCart session cookie
+  const expressCartSession = req.cookies.get("_sessionid")?.value;
+  if (!expressCartSession) {
+    return NextResponse.json({ error: "Unauthorized (missing ExpressCart session)" }, { status: 401 });
   }
-  const sql = getSql()
+
   try {
-    const rows =
-      await sql`insert into orders (customer_name, phone, address, lat, lng, instructions, items, total) values (${customer_name}, ${phone}, ${address}, ${lat}, ${lng}, ${instructions || ""}, ${JSON.stringify(
-        items,
-      )}, ${total}) returning id`
-    return NextResponse.json({ id: rows[0].id })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || "Internal Server Error" }, { status: 500 })
+    const ordersRes = await fetch("/tt/v1/api/orders", {
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `_sessionid=${expressCartSession}`,
+      },
+      cache: "no-store",
+    });
+
+    if (!ordersRes.ok) {
+      const text = await ordersRes.text(); // get error text
+      console.error("ExpressCart returned error:", text);
+      return NextResponse.json({ error: "Failed to fetch orders from ExpressCart" }, { status: 500 });
+    }
+
+    const data = await ordersRes.json();
+    return NextResponse.json(data);
+  } catch (err: any) {
+    console.error("GET /api/orders failed:", err);
+    return NextResponse.json({ error: err.message || "Internal server error" }, { status: 500 });
   }
 }

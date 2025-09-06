@@ -1,65 +1,79 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getSql } from "@/lib/db"
+
+type Meal = {
+  id: number
+  name: string
+  description: string
+  price: number
+  image_url: string | null
+}
 
 export async function GET() {
   try {
-    const sql = getSql()
-    const rows = await sql`select id, name, description, price, image_url from meals order by created_at desc`
-    if (rows.length === 0) {
-      return NextResponse.json([
-        {
-          id: 1,
-          name: "Veggie Pesto Pasta",
-          description: "Fresh basil pesto, cherry tomatoes, parmesan.",
-          price: 12.5,
-          image_url: null,
-        },
-        {
-          id: 2,
-          name: "Chicken Fried Rice",
-          description: "Wok-fried rice with peas, carrots, and eggs.",
-          price: 11.0,
-          image_url: null,
-        },
-        {
-          id: 3,
-          name: "Creamy Corn Risotto",
-          description: "Comforting, kid-approved and cheesy.",
-          price: 13.0,
-          image_url: null,
-        },
-      ])
+    const res = await fetch("/tt/v1/api/products", {
+      cache: "no-store", // ensure fresh data every time
+    })
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch meals: ${res.statusText}`)
     }
-    return NextResponse.json(rows)
+
+    const data = await res.json()
+    const meals = Array.isArray(data.product) ? data.product : []
+
+    return NextResponse.json(meals)
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+    console.error("GET /api/meals failed:", e)
+    return NextResponse.json(
+      { error: e?.message || "Failed to fetch meals" },
+      { status: 500 }
+    )
   }
 }
 
 export async function POST(req: NextRequest) {
-  let body: any
   try {
-    body = await req.json()
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
-  }
+    const body = await req.json()
 
-  const name = body?.name as string | undefined
-  const description = (body?.description as string | undefined) ?? ""
-  const rawPrice = body?.price
-  const price = typeof rawPrice === "string" ? Number(rawPrice) : rawPrice
-  const image_url = (body?.image_url as string | null) ?? null
+    const name = body?.name as string | undefined
+    const description = (body?.description as string | undefined) ?? ""
+    const rawPrice = body?.price
+    const price = typeof rawPrice === "string" ? Number(rawPrice) : rawPrice
+    const image_url = (body?.image_url as string | null) ?? null
 
-  if (!name || typeof price !== "number" || Number.isNaN(price)) {
-    return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
-  }
+    if (!name || typeof price !== "number" || Number.isNaN(price)) {
+      return NextResponse.json(
+        { error: "Missing required fields: name, price" },
+        { status: 400 }
+      )
+    }
 
-  try {
-    const sql = getSql()
-    const rows =
-      await sql`insert into meals (name, description, price, image_url) values (${name}, ${description}, ${price}, ${image_url}) returning id, name, description, price, image_url`
-    return NextResponse.json(rows[0])
+    // --- Get ExpressCart session cookie from request ---
+    const expressCartSession = req.cookies.get("_sessionid")?.value
+    if (!expressCartSession) {
+      return NextResponse.json(
+        { error: "Unauthorized (missing ExpressCart session)" },
+        { status: 401 }
+      )
+    }
+
+    // --- Forward to ExpressCart API ---
+    const res = await fetch("/tt/v1/api/products", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `_sessionid=${expressCartSession}`, // pass session for auth
+      },
+      body: JSON.stringify({ name, description, price, image_url, additionalInfo: null }),
+    })
+
+    const data = await res.json()
+    return NextResponse.json(data, { status: res.status })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Failed to create meal" }, { status: 500 })
+    console.error("POST /api/meals failed:", e)
+    return NextResponse.json(
+      { error: e?.message || "Failed to create meal" },
+      { status: 500 }
+    )
   }
 }

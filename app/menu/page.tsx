@@ -6,7 +6,16 @@ import MealCard, { type Meal } from "@/components/meal-card"
 const fetcher = (url: string) => fetch(url).then((r) => r.json())
 
 export default function MenuPage() {
-  const { data, error, isLoading } = useSWR<Meal[]>("/api/meals", fetcher)
+  const { data, error, isLoading } = useSWR<any[]>("http://localhost:1111/product", fetcher)
+
+  // Map backend response → frontend Meal type
+  const meals: Meal[] = (data || []).map((p) => ({
+    id: p._id, // backend Mongo _id
+    name: p.productTitle,
+    description: p.productDescription,
+    price: p.productPrice,
+    image_url: p.productImage ? `http://localhost:1111/${p.productImage}` : null
+  }))
 
   return (
     <section className="space-y-6">
@@ -19,7 +28,7 @@ export default function MenuPage() {
       {error && <p className="text-red-600">Failed to load menu.</p>}
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {(data || []).map((meal) => (
+        {meals.map((meal) => (
           <MealCard key={meal.id} meal={meal} />
         ))}
       </div>

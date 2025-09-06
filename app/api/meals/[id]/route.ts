@@ -1,27 +1,53 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getSql } from "@/lib/db"
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
-  const id = Number(params.id)
-  const body = await req.json()
-  const { name, description, price, image_url } = body
-  const sql = getSql()
-  try {
-    const rows =
-      await sql`update meals set name=${name}, description=${description}, price=${price}, image_url=${image_url} where id=${id} returning id, name, description, price, image_url`
-    return NextResponse.json(rows[0])
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
-  }
+// reuse type
+type Meal = {
+  id: number
+  name: string
+  description: string
+  price: number
+  image_url: string | null
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { id: string } }
+) {
   const id = Number(params.id)
-  const sql = getSql()
+  if (Number.isNaN(id)) {
+    return NextResponse.json({ error: "Invalid ID" }, { status: 400 })
+  }
+
   try {
-    await sql`delete from meals where id=${id}`
-    return NextResponse.json({ ok: true })
+    // Call ExpressCart backend
+    const backendUrl =
+      process.env.EXPRESSCART_URL || "/tt/v1/api"
+
+    const res = await fetch(`${backendUrl}/products/${id}`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+    })
+
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: `Failed to fetch meal: ${res.statusText}` },
+        { status: res.status }
+      )
+    }
+
+    const data = await res.json()
+
+    // API returns { product: {...} }
+    const meal: Meal | undefined = data?.product
+
+    if (!meal) {
+      return NextResponse.json({ error: "Meal not found" }, { status: 404 })
+    }
+
+    return NextResponse.json(meal)
   } catch (e: any) {
+    console.error("Error fetching meal:", e)
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }

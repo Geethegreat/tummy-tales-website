@@ -26,38 +26,39 @@ export default function AddMealForm({ onCreated }: { onCreated: () => void }) {
       setLoading(true)
       let image_url: string | null = null
 
+      // --- Upload image if present ---
       if (file) {
         const formData = new FormData()
         formData.append("file", file)
 
         const uploadResp = await fetch("/api/upload", { method: "POST", body: formData })
-
         if (uploadResp.ok) {
           const { json, text } = await parseBodyOnce(uploadResp)
-          if (json?.url) {
-            image_url = json.url as string
-          } else {
-            throw new Error(text || "Image upload failed")
-          }
+          if (json?.url) image_url = json.url as string
+          else throw new Error(text || "Image upload failed")
         } else {
           const { text } = await parseBodyOnce(uploadResp)
           console.warn("[v0] Image upload failed:", text)
         }
       }
 
-      const resp = await fetch("/api/meals", {
+      // --- Create meal (internal + ExpressCart) ---
+      const mealResp = await fetch("/api/meals", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "Content-Type": "application/json" },
+        credentials: "include", // ensures cookies are sent
         body: JSON.stringify({ name, price, description, image_url }),
       })
 
-      if (!resp.ok) {
-        const { json, text } = await parseBodyOnce(resp)
-        const message = (json?.error as string) || text || "Failed to create meal"
-        throw new Error(message)
+      if (!mealResp.ok) {
+        const { json, text } = await parseBodyOnce(mealResp)
+        throw new Error((json?.error as string) || text || "Failed to create meal")
       }
 
-      // Reset form on success
+      const mealData = await mealResp.json()
+      alert(`Meal created successfully! Product ID: ${mealData.productId || "N/A"}`)
+
+      // --- Reset form ---
       setName("")
       setPrice(10)
       setDescription("")
@@ -82,7 +83,6 @@ export default function AddMealForm({ onCreated }: { onCreated: () => void }) {
           onChange={(e) => setName(e.target.value)}
           required
         />
-
         <input
           type="number"
           step="0.01"
@@ -93,7 +93,6 @@ export default function AddMealForm({ onCreated }: { onCreated: () => void }) {
           onChange={(e) => setPrice(Number(e.target.value))}
           required
         />
-
         <textarea
           placeholder="Description (optional)"
           className="w-full rounded border border-gray-300 px-3 py-2 focus:border-emerald-500 focus:outline-none"
@@ -101,7 +100,6 @@ export default function AddMealForm({ onCreated }: { onCreated: () => void }) {
           value={description}
           onChange={(e) => setDescription(e.target.value)}
         />
-
         <div className="space-y-2">
           <label className="block text-sm font-medium text-gray-700">Image (optional)</label>
           <input
